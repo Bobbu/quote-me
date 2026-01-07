@@ -26,8 +26,10 @@ import '../services/daily_nuggets_service.dart';
 import '../helpers/storage_helper_web.dart' if (dart.library.io) '../helpers/storage_helper_stub.dart' as storage_helper;
 
 
-class QuoteScreen extends StatefulWidget {  
-  const QuoteScreen({super.key});
+class QuoteScreen extends StatefulWidget {
+  final String? initialQuoteId;
+
+  const QuoteScreen({super.key, this.initialQuoteId});
 
   @override
   State<QuoteScreen> createState() => _QuoteScreenState();
@@ -74,6 +76,12 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
       _initialAuthCheckDone = true;
     });
     _handleAuthSuccessParameter();
+
+    // If launched with a specific quote ID (deep link), fetch that quote
+    if (widget.initialQuoteId != null) {
+      LoggerService.info('🔗 Deep link detected - loading quote: ${widget.initialQuoteId}');
+      _fetchQuoteById(widget.initialQuoteId!);
+    }
   }
   
   void _handleAuthSuccessParameter() {
@@ -159,6 +167,17 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
       LoggerService.debug('Error stopping TTS in dispose: $e');
     }
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(QuoteScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Handle navigation to a new quote ID (e.g., deep link while already on QuoteScreen)
+    if (widget.initialQuoteId != null &&
+        widget.initialQuoteId != oldWidget.initialQuoteId) {
+      LoggerService.info('🔗 Widget updated with new quote ID: ${widget.initialQuoteId}');
+      _fetchQuoteById(widget.initialQuoteId!);
+    }
   }
 
   @override
@@ -882,6 +901,124 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
     }
   }
 
+  /// Fetches a specific quote by ID (used for deep links)
+  Future<void> _fetchQuoteById(String quoteId) async {
+    LoggerService.debug('🔗 _fetchQuoteById() called with id: $quoteId');
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      // Build URL for specific quote
+      final url = '$apiEndpoint/$quoteId';
+      LoggerService.debug('🌐 Making API request to: $url');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'x-api-key': apiKey,
+          'Content-Type': 'application/json',
+        },
+      );
+
+      LoggerService.debug('📡 API Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        LoggerService.debug('✅ Quote fetched by ID: ${data['quote']?.toString().substring(0, 50)}...');
+
+        setState(() {
+          _quote = data['quote'];
+          _author = data['author'];
+          _currentQuoteId = data['id'];
+          _currentImageUrl = data['image_url'];
+
+          // Handle tags - they might be returned as string or array
+          var tagsData = data['tags'] ?? [];
+          if (tagsData is String) {
+            _currentTags = tagsData.split(',').map((tag) => tag.trim()).where((tag) => tag.isNotEmpty).toList();
+          } else if (tagsData is List) {
+            _currentTags = List<String>.from(tagsData);
+          } else {
+            _currentTags = [];
+          }
+
+          _isLoading = false;
+        });
+
+        // Automatically speak the quote if audio is enabled
+        _speakQuote();
+      } else if (response.statusCode == 404) {
+        LoggerService.debug('❌ Quote not found: $quoteId');
+        setState(() {
+          _error = 'Quote not found';
+          _isLoading = false;
+        });
+        // Fall back to getting a random quote
+        _getQuote();
+      } else {
+        LoggerService.debug('❌ API Error: ${response.statusCode}');
+        setState(() {
+          _error = 'Failed to load quote (${response.statusCode})';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      LoggerService.debug('❌ Error fetching quote by ID: $e');
+      setState(() {
+        _error = 'Network error: ${e.toString()}';
+        _isLoading = false;
+      });
+      // Fall back to getting a random quote on error
+      _getQuote();
+    }
+  }
+
+  /// Calculates responsive font size based on screen width and quote length.
+  /// Small screens get smaller fonts, large screens get larger fonts.
+  /// Very long quotes get slightly smaller fonts to fit.
+  double _getResponsiveQuoteFontSize(BuildContext context, {bool isAuthor = false}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final quoteLength = _quote?.length ?? 0;
+
+    // Base font size scaling by screen width (reduced for better fit)
+    double baseFontSize;
+    if (screenWidth < 360) {
+      // Very small phones
+      baseFontSize = isAuthor ? 11 : 13;
+    } else if (screenWidth < 400) {
+      // Small phones
+      baseFontSize = isAuthor ? 12 : 14;
+    } else if (screenWidth < 500) {
+      // Medium phones
+      baseFontSize = isAuthor ? 14 : 16;
+    } else if (screenWidth < 700) {
+      // Large phones / small tablets
+      baseFontSize = isAuthor ? 16 : 18;
+    } else {
+      // Tablets and larger
+      baseFontSize = isAuthor ? 18 : 20;
+    }
+
+    // Further reduce font size for long quotes (only for quote text, not author)
+    // Check longer quotes first for proper cascading
+    if (!isAuthor) {
+      if (quoteLength > 400) {
+        baseFontSize *= 0.75;
+      } else if (quoteLength > 300) {
+        baseFontSize *= 0.8;
+      } else if (quoteLength > 200) {
+        baseFontSize *= 0.85;
+      } else if (quoteLength > 150) {
+        baseFontSize *= 0.9;
+      }
+    }
+
+    return baseFontSize;
+  }
+
   Widget _buildCardWithImage() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -969,9 +1106,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                       height: 1.4,
-                      fontSize: Theme.of(context).textTheme.headlineLarge?.fontSize != null 
-                          ? (Theme.of(context).textTheme.headlineLarge!.fontSize! * 1.1)
-                          : null,
+                      fontSize: _getResponsiveQuoteFontSize(context),
                       shadows: [
                         Shadow(
                           offset: Offset(-1.5, -1.5),
@@ -1008,9 +1143,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w500,
                       color: Colors.white.withValues(alpha: 0.95),
-                      fontSize: Theme.of(context).textTheme.headlineLarge?.fontSize != null 
-                          ? (Theme.of(context).textTheme.headlineLarge!.fontSize! * 0.9)
-                          : null,
+                      fontSize: _getResponsiveQuoteFontSize(context, isAuthor: true),
                       shadows: [
                         Shadow(
                           offset: Offset(-1, -1),
@@ -1132,9 +1265,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                       height: 1.4,
-                      fontSize: Theme.of(context).textTheme.headlineLarge?.fontSize != null 
-                          ? (Theme.of(context).textTheme.headlineLarge!.fontSize! * 1.1)
-                          : null,
+                      fontSize: _getResponsiveQuoteFontSize(context),
                       shadows: [
                         Shadow(
                           offset: Offset(-1.5, -1.5),
@@ -1171,9 +1302,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                     style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       fontWeight: FontWeight.w500,
                       color: Colors.white.withValues(alpha: 0.95),
-                      fontSize: Theme.of(context).textTheme.headlineLarge?.fontSize != null 
-                          ? (Theme.of(context).textTheme.headlineLarge!.fontSize! * 0.9)
-                          : null,
+                      fontSize: _getResponsiveQuoteFontSize(context, isAuthor: true),
                       shadows: [
                         Shadow(
                           offset: Offset(-1, -1),

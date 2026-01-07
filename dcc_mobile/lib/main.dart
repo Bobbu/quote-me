@@ -9,7 +9,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'screens/quote_screen.dart';
 import 'screens/user_profile_screen.dart';
-import 'screens/quote_detail_screen.dart';
 import 'services/auth_service.dart';
 import 'services/logger_service.dart';
 import 'services/fcm_service.dart';
@@ -205,8 +204,9 @@ final GoRouter _router = GoRouter(
       path: '/quote/:id',
       builder: (BuildContext context, GoRouterState state) {
         final quoteId = state.pathParameters['id']!;
-        LoggerService.debug('📖 Navigating to quote detail screen with ID: $quoteId');
-        return QuoteDetailScreen(quoteId: quoteId);
+        LoggerService.debug('🔗 Deep link - navigating to quote screen with ID: $quoteId');
+        // Use ValueKey to force widget recreation when quote ID changes
+        return QuoteScreen(key: ValueKey(quoteId), initialQuoteId: quoteId);
       },
     ),
     GoRoute(

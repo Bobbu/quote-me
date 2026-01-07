@@ -28,7 +28,7 @@ import '../widgets/admin/tag_generation_dialogs.dart';
 import '../widgets/admin/edit_quote_dialog.dart';
 import '../widgets/admin/image_generation_dialog.dart';
 import '../widgets/favorite_heart_button.dart';
-import 'quote_detail_screen.dart';
+import 'quote_screen.dart';
 import 'user_profile_screen.dart';
 import 'settings_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -2614,8 +2614,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (context) => QuoteDetailScreen(
-                                              quoteId: quote.id,
+                                            builder: (context) => QuoteScreen(
+                                              initialQuoteId: quote.id,
                                             ),
                                           ),
                                         );
