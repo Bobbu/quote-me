@@ -5,7 +5,7 @@ from html import escape
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(os.environ.get('QUOTES_TABLE', 'dcc-quotes'))
+table = dynamodb.Table(os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes'))
 
 def get_quote_by_id(quote_id):
     """Get a specific quote by its ID."""

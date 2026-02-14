@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import boto3
 import urllib.parse
 import requests
@@ -102,7 +103,7 @@ def store_oauth_success_flag(user_email: str, user_sub: str) -> str:
         success_key = f"oauth_success_{timestamp}_{user_sub[-8:]}"
         
         # Store simple success flag with 5-minute TTL
-        table = dynamodb.Table('dcc-quotes')
+        table = dynamodb.Table(os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes'))
         table.put_item(
             Item={
                 'id': success_key,
@@ -127,7 +128,7 @@ def check_oauth_success(success_key: str) -> Dict[str, Any]:
         if not success_key:
             return {'success': False, 'error': 'Missing success key'}
         
-        table = dynamodb.Table('dcc-quotes')
+        table = dynamodb.Table(os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes'))
         response = table.get_item(Key={'id': success_key})
         
         if 'Item' not in response:

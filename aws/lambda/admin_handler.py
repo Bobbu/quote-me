@@ -8,7 +8,7 @@ from boto3.dynamodb.conditions import Key, Attr
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table(os.environ.get('QUOTES_TABLE_NAME', 'dcc-quotes-optimized'))
+table = dynamodb.Table(os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes'))
 tags_table = dynamodb.Table(os.environ.get('TAGS_TABLE_NAME', 'quote-me-tags'))
 
 def normalize_text(text):

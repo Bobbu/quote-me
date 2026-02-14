@@ -21,8 +21,8 @@ ses = boto3.client('ses', region_name='us-east-1')
 cognito = boto3.client('cognito-idp')
 
 # Get environment variables
-QUOTES_TABLE_NAME = os.environ.get('QUOTES_TABLE_NAME', 'dcc-quotes-optimized')
-SUBSCRIPTIONS_TABLE_NAME = os.environ.get('SUBSCRIPTIONS_TABLE_NAME', 'dcc-subscriptions')
+QUOTES_TABLE_NAME = os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes')
+SUBSCRIPTIONS_TABLE_NAME = os.environ.get('SUBSCRIPTIONS_TABLE_NAME', 'quote-me-subscriptions')
 USER_POOL_ID = os.environ.get('USER_POOL_ID')
 SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'noreply@anystupididea.com')
 CORS_ORIGIN = os.environ.get('CORS_ORIGIN', '*')
@@ -504,7 +504,7 @@ def send_daily_email(recipient_email, quote_data):
 
         — {quote_data['author']}
 
-        Tags: {', '.join(quote_data.get('tags', []))}
+        Tags: {', '.join(quote_data.get('tags', []) if isinstance(quote_data.get('tags', []), list) else [t.strip() for t in quote_data.get('tags', '').split(',') if t.strip()])}
 
         ---
         Share this quote:
@@ -544,7 +544,9 @@ def format_tags_html(tags):
     """Format tags for HTML email"""
     if not tags:
         return ""
-    
+    # Handle tags stored as a string (legacy data)
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(',') if t.strip()]
     tags_html = '<div class="tags">'
     for tag in tags[:5]:  # Limit to 5 tags
         tags_html += f'<span class="tag">{tag}</span>'

@@ -12,7 +12,7 @@ s3 = boto3.client('s3')
 cognito = boto3.client('cognito-idp')
 
 # Environment variables
-TABLE_NAME = os.environ.get('TABLE_NAME', 'dcc-quotes-optimized')
+TABLE_NAME = os.environ.get('QUOTES_TABLE_NAME', 'quote-me-quotes')
 EXPORT_BUCKET = os.environ.get('EXPORT_BUCKET', 'quote-me-app-db-exports')
 USER_POOL_ID = os.environ.get('USER_POOL_ID')
 
