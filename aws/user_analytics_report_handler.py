@@ -387,6 +387,11 @@ def generate_html_report(data: Dict[str, Any], changes: Dict[str, Any]) -> str:
             <div class="footer">
                 <p>🤖 Generated automatically by Quote Me Analytics</p>
                 <p>Report generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+                <p style="font-size: 12px; margin-top: 15px; color: #9ca3af;">
+                    <a href="https://anystupididea.com" style="color: #9ca3af; text-decoration: none;">Any Stupid Idea</a> &middot;
+                    <a href="https://anystupididea.com/privacy.html" style="color: #9ca3af; text-decoration: none;">Privacy</a> &middot;
+                    <a href="https://anystupididea.com/terms.html" style="color: #9ca3af; text-decoration: none;">Terms</a>
+                </p>
             </div>
         </div>
     </body>

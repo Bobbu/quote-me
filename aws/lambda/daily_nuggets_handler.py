@@ -490,6 +490,11 @@ def send_daily_email(recipient_email, quote_data):
                     <p style="font-size: 12px; margin-top: 10px;">
                         <a href="https://quote-me.anystupididea.com/profile" style="color: #718096;">Or manage in your browser</a>
                     </p>
+                    <p style="font-size: 12px; margin-top: 15px; color: #a0aec0;">
+                        <a href="https://anystupididea.com" style="color: #a0aec0; text-decoration: none;">Any Stupid Idea</a> &middot;
+                        <a href="https://anystupididea.com/privacy.html" style="color: #a0aec0; text-decoration: none;">Privacy</a> &middot;
+                        <a href="https://anystupididea.com/terms.html" style="color: #a0aec0; text-decoration: none;">Terms</a>
+                    </p>
                 </div>
             </div>
         </body>

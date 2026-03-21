@@ -61,6 +61,11 @@ def send_decision_email(proposer_email, proposer_name, quote_text, author, actio
                         
                         <div class="footer">
                             <p>With gratitude,<br>The Quote Me Team</p>
+                            <p style="font-size: 12px; margin-top: 15px; color: #999;">
+                                <a href="https://anystupididea.com" style="color: #999; text-decoration: none;">Any Stupid Idea</a> &middot;
+                                <a href="https://anystupididea.com/privacy.html" style="color: #999; text-decoration: none;">Privacy</a> &middot;
+                                <a href="https://anystupididea.com/terms.html" style="color: #999; text-decoration: none;">Terms</a>
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -108,6 +113,11 @@ def send_decision_email(proposer_email, proposer_name, quote_text, author, actio
                         
                         <div class="footer">
                             <p>With appreciation,<br>The Quote Me Team</p>
+                            <p style="font-size: 12px; margin-top: 15px; color: #999;">
+                                <a href="https://anystupididea.com" style="color: #999; text-decoration: none;">Any Stupid Idea</a> &middot;
+                                <a href="https://anystupididea.com/privacy.html" style="color: #999; text-decoration: none;">Privacy</a> &middot;
+                                <a href="https://anystupididea.com/terms.html" style="color: #999; text-decoration: none;">Terms</a>
+                            </p>
                         </div>
                     </div>
                 </div>

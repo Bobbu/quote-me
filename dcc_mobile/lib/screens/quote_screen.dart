@@ -20,6 +20,7 @@ import 'user_profile_screen.dart';
 import 'propose_quote_screen.dart';
 import 'favorites_screen.dart';
 import '../widgets/favorite_heart_button.dart';
+import '../widgets/app_footer.dart';
 import '../services/daily_nuggets_service.dart';
 
 // Conditional imports for web-specific functionality
@@ -1840,7 +1841,8 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
-                        ],
+                const AppFooter(),
+                      ],
                       ),
                     ),
                   ),
