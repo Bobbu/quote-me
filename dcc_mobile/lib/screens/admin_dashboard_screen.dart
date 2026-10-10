@@ -10,7 +10,7 @@ import '../helpers/download_helper_stub.dart'
     if (dart.library.html) '../helpers/download_helper_web.dart';
 import '../services/auth_service.dart';
 import '../services/admin_api_service.dart';
-import '../services/daily_nuggets_service.dart';
+import '../services/settings_service.dart';
 import '../services/logger_service.dart';
 import '../services/export_service.dart';
 import '../widgets/export_destination_dialog.dart';
@@ -74,7 +74,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
   Timer? _debounceTimer;
   int _quoteRetrievalLimit = 50;
-  int _maxReturnedQuotes = 5;
   
   // Scroll control
   final ScrollController _scrollController = ScrollController();
@@ -107,8 +106,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     try {
       // Load quote retrieval limit first
       await _loadQuoteRetrievalLimit();
-      // Load max returned quotes limit
-      await _loadMaxReturnedQuotes();
       // Then load sort preferences
       await _loadSortPreferences();
       
@@ -132,8 +129,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reload quote retrieval limit and max returned quotes in case they were changed in settings
-    _loadQuoteRetrievalLimit().then((_) => _loadMaxReturnedQuotes()).then((_) {
+    // Reload quote retrieval limit in case it was changed in settings
+    _loadQuoteRetrievalLimit().then((_) {
       // After loading the limits, refresh the data respecting search/sort state
       if (_quotes.isNotEmpty || _searchResults.isNotEmpty) {
         // Only refresh if we already have data (not the initial load)
@@ -305,22 +302,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
   
-  Future<void> _loadMaxReturnedQuotes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final limit = prefs.getInt('max_returned_quotes') ?? 5;
-      LoggerService.debug('📊 Admin Dashboard loaded max returned quotes limit: $limit');
-      setState(() {
-        _maxReturnedQuotes = limit;
-      });
-    } catch (e) {
-      LoggerService.error('Failed to load max returned quotes limit: $e');
-      setState(() {
-        _maxReturnedQuotes = 5;
-      });
-    }
-  }
-
   void _onSearchChanged(String value) {
     // Cancel any existing timer
     _debounceTimer?.cancel();
@@ -1143,73 +1124,46 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  void _openSettings() async {
+  Future<void> _openSettings() async {
     try {
-      // Load settings from SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      final audioEnabled = prefs.getBool('audio_enabled') ?? false;
-      final selectedCategories = prefs.getStringList('selected_categories')?.toSet() ?? {'All'};
-      final speechRate = prefs.getDouble('speech_rate') ?? 0.5;
-      final pitch = prefs.getDouble('pitch') ?? 1.0;
-      
-      // Load voice settings
-      Map<String, String>? selectedVoice;
-      final voiceName = prefs.getString('selected_voice_name');
-      final voiceLocale = prefs.getString('selected_voice_locale');
-      if (voiceName != null && voiceLocale != null) {
-        selectedVoice = {'name': voiceName, 'locale': voiceLocale};
-      }
+      final settings = await SettingsService.load();
 
       // Check if widget is still mounted before using context
       if (!mounted) return;
 
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => SettingsScreen(
-            audioEnabled: audioEnabled,
-            selectedCategories: selectedCategories,
-            selectedVoice: selectedVoice,
-            speechRate: speechRate,
-            pitch: pitch,
-            quoteRetrievalLimit: _quoteRetrievalLimit,
-            maxReturnedQuotes: _maxReturnedQuotes,
+            audioEnabled: settings.audioEnabled,
+            selectedCategories: settings.selectedCategories,
+            selectedVoice: settings.selectedVoice,
+            speechRate: settings.speechRate,
+            pitch: settings.pitch,
+            quoteRetrievalLimit: settings.quoteRetrievalLimit,
+            maxReturnedQuotes: settings.maxReturnedQuotes,
             isAdmin: true,
             onSettingsChanged: (audioEnabled, categories, voice, speechRate, pitch, quoteRetrievalLimit, maxReturnedQuotes) {
               // Update the settings when they change
               setState(() {
                 _quoteRetrievalLimit = quoteRetrievalLimit;
-                _maxReturnedQuotes = maxReturnedQuotes;
               });
-              
-              // Save settings to SharedPreferences
-              _saveSettingsToPrefs(audioEnabled, categories, voice, speechRate, pitch, quoteRetrievalLimit, maxReturnedQuotes);
+
+              unawaited(SettingsService.save(AppSettings(
+                audioEnabled: audioEnabled,
+                selectedCategories: categories,
+                selectedVoice: voice,
+                speechRate: speechRate,
+                pitch: pitch,
+                quoteRetrievalLimit: quoteRetrievalLimit,
+                maxReturnedQuotes: maxReturnedQuotes,
+              )));
             },
           ),
         ),
       );
     } catch (e) {
       LoggerService.error('Error opening settings', error: e);
-    }
-  }
-
-  Future<void> _saveSettingsToPrefs(bool audioEnabled, Set<String> categories, Map<String, String>? voice, double speechRate, double pitch, int quoteRetrievalLimit, int maxReturnedQuotes) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('audio_enabled', audioEnabled);
-      await prefs.setStringList('selected_categories', categories.toList());
-      unawaited(DailyNuggetsService.syncTagFilter(categories));
-      await prefs.setInt('quote_retrieval_limit', quoteRetrievalLimit);
-      await prefs.setInt('max_returned_quotes', maxReturnedQuotes);
-      await prefs.setDouble('speech_rate', speechRate);
-      await prefs.setDouble('pitch', pitch);
-      
-      if (voice != null) {
-        await prefs.setString('selected_voice_name', voice['name']!);
-        await prefs.setString('selected_voice_locale', voice['locale']!);
-      }
-    } catch (e) {
-      LoggerService.error('Error saving settings', error: e);
     }
   }
 

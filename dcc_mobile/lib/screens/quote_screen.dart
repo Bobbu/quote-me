@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'settings_screen.dart';
 import 'login_screen.dart';
@@ -22,6 +21,7 @@ import 'favorites_screen.dart';
 import '../widgets/favorite_heart_button.dart';
 import '../widgets/app_footer.dart';
 import '../services/daily_nuggets_service.dart';
+import '../services/settings_service.dart';
 
 // Conditional imports for web-specific functionality
 import '../helpers/storage_helper_web.dart' if (dart.library.io) '../helpers/storage_helper_stub.dart' as storage_helper;
@@ -631,64 +631,48 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
   }
 
 
+  /// Reload settings from storage (they may have been changed from another screen)
   Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
+    final settings = await SettingsService.load();
+    if (!mounted) return;
     setState(() {
-      _audioEnabled = prefs.getBool('audio_enabled') ?? false;  // Changed default to false
-      final categories = prefs.getStringList('selected_categories') ?? ['All'];
-      _selectedCategories = Set<String>.from(categories);
-      
-      // Load quote retrieval limit
-      _quoteRetrievalLimit = prefs.getInt('quote_retrieval_limit') ?? 50;
-      
-      // Load selected voice
-      final voiceName = prefs.getString('selected_voice_name');
-      final voiceLocale = prefs.getString('selected_voice_locale');
-      if (voiceName != null && voiceLocale != null) {
-        _selectedVoice = {'name': voiceName, 'locale': voiceLocale};
-      }
-      
-      // Load TTS parameters
-      _speechRate = prefs.getDouble('speech_rate') ?? 0.5;
-      _pitch = prefs.getDouble('pitch') ?? 1.0;
+      _audioEnabled = settings.audioEnabled;
+      _selectedCategories = settings.selectedCategories;
+      _quoteRetrievalLimit = settings.quoteRetrievalLimit;
+      _selectedVoice = settings.selectedVoice ?? _selectedVoice;
+      _speechRate = settings.speechRate;
+      _pitch = settings.pitch;
     });
-    
+
     // Apply all TTS settings
     _setTtsSettings();
   }
 
-  Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('audio_enabled', _audioEnabled);
-    await prefs.setStringList('selected_categories', _selectedCategories.toList());
-    unawaited(DailyNuggetsService.syncTagFilter(_selectedCategories));
-    await prefs.setInt('quote_retrieval_limit', _quoteRetrievalLimit);
-    
-    // Save selected voice
-    if (_selectedVoice != null) {
-      await prefs.setString('selected_voice_name', _selectedVoice!['name']!);
-      await prefs.setString('selected_voice_locale', _selectedVoice!['locale']!);
-    }
-    
-    // Save TTS parameters
-    await prefs.setDouble('speech_rate', _speechRate);
-    await prefs.setDouble('pitch', _pitch);
-  }
-
-  void _openSettings() {
-    Navigator.push(
+  Future<void> _openSettings() async {
+    final settings = await SettingsService.load();
+    if (!mounted) return;
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => SettingsScreen(
-          audioEnabled: _audioEnabled,
-          selectedCategories: _selectedCategories,
-          selectedVoice: _selectedVoice,
-          speechRate: _speechRate,
-          pitch: _pitch,
-          quoteRetrievalLimit: _quoteRetrievalLimit,
-          maxReturnedQuotes: 5, // Default value for non-admin users (this setting won't be shown)
+          audioEnabled: settings.audioEnabled,
+          selectedCategories: settings.selectedCategories,
+          selectedVoice: settings.selectedVoice ?? _selectedVoice,
+          speechRate: settings.speechRate,
+          pitch: settings.pitch,
+          quoteRetrievalLimit: settings.quoteRetrievalLimit,
+          maxReturnedQuotes: settings.maxReturnedQuotes,
           isAdmin: _isAdmin,
           onSettingsChanged: (audioEnabled, categories, voice, speechRate, pitch, quoteRetrievalLimit, maxReturnedQuotes) {
+            unawaited(SettingsService.save(AppSettings(
+              audioEnabled: audioEnabled,
+              selectedCategories: categories,
+              selectedVoice: voice,
+              speechRate: speechRate,
+              pitch: pitch,
+              quoteRetrievalLimit: quoteRetrievalLimit,
+              maxReturnedQuotes: maxReturnedQuotes,
+            )));
             setState(() {
               _audioEnabled = audioEnabled;
               _selectedCategories = categories;
@@ -696,9 +680,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
               _speechRate = speechRate;
               _pitch = pitch;
               _quoteRetrievalLimit = quoteRetrievalLimit;
-              // Note: maxReturnedQuotes is not used in quote_screen as it's admin-only
             });
-            _saveSettings();
             // Apply all TTS settings immediately
             _setTtsSettings();
           },
@@ -729,6 +711,8 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
         // ALWAYS refresh auth status when returning from admin dashboard
         LoggerService.debug('  Returned from AdminDashboard, refreshing auth...');
         await _checkAuthStatus();
+        // Settings may have been changed from the admin dashboard
+        await _loadSettings();
       }
     } else {
       // Not signed in or not admin, show login screen
@@ -745,6 +729,8 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
           LoggerService.debug('  Login successful, refreshing auth...');
           await _checkAuthStatus();
         }
+        // Login can lead on to the admin dashboard, where settings may change
+        await _loadSettings();
       }
     }
   }
@@ -1423,7 +1409,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                   await _handleLogout();
                   break;
                 case 'settings':
-                  _openSettings();
+                  await _openSettings();
                   break;
                 case 'about':
                   _showAboutDialog();
