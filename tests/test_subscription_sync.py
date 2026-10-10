@@ -10,7 +10,7 @@ from decimal import Decimal
 
 # DynamoDB client
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-subscriptions_table = dynamodb.Table('dcc-subscriptions')
+subscriptions_table = dynamodb.Table('quote-me-subscriptions')
 
 def decimal_default(obj):
     if isinstance(obj, Decimal):
@@ -34,6 +34,7 @@ def check_subscription(email):
             print(f"  Subscribed: {item.get('is_subscribed')}")
             print(f"  Delivery Method: {item.get('delivery_method')}")
             print(f"  Timezone: {item.get('timezone')}")
+            print(f"  Tag filter: {item.get('tags') or 'All'}")
             print(f"  Created: {item.get('created_at')}")
             print(f"  Updated: {item.get('updated_at')}")
             print("\nRaw data:")
@@ -55,6 +56,9 @@ def list_all_subscriptions():
     try:
         response = subscriptions_table.scan()
         items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response:
+            response = subscriptions_table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            items.extend(response.get('Items', []))
         
         if not items:
             print("No subscriptions found")
@@ -67,7 +71,7 @@ def list_all_subscriptions():
             if is_subscribed:
                 active_count += 1
             status = "✅ ACTIVE" if is_subscribed else "⭕ INACTIVE"
-            print(f"  {status} {email}")
+            print(f"  {status} {email} — tags: {item.get('tags') or 'All'}")
         
         print(f"\nTotal: {len(items)} users, {active_count} active subscriptions")
         
