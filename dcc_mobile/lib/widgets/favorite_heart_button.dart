@@ -194,11 +194,6 @@ class _FavoriteHeartButtonState extends State<FavoriteHeartButton>
 
   @override
   Widget build(BuildContext context) {
-    // final unfavoritedColor = theme.brightness == Brightness.dark
-    //     ? theme.colorScheme.onSurface.withOpacity(0.6)
-    //     : theme.colorScheme.onSurface.withOpacity(0.7);
-    final unfavoritedColor = Colors.red;
-
     if (!_isSignedIn) {
       return const SizedBox.shrink();
     }

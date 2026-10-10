@@ -402,9 +402,7 @@ class FCMService {
   }
 
   Future<void> requestPermissions() async {
-    print('🔔 FCM requestPermissions() method entry - START');
     try {
-      print('🔔 FCM requestPermissions() - inside try block');
       _logger.i('🔔 FCM requestPermissions() called');
       _logger.i('🔔 FCM service initialized: $_initialized');
       
@@ -430,12 +428,9 @@ class FCMService {
         _logger.w('🔔 No FCM token obtained, skipping refresh listener');
       }
     } catch (e) {
-      print('🔔 FCM requestPermissions() - EXCEPTION CAUGHT: $e');
       _logger.e('🔔 Exception in requestPermissions(): $e');
       _logger.e('🔔 Stack trace: ${StackTrace.current}');
       rethrow;
-    } finally {
-      print('🔔 FCM requestPermissions() method - FINALLY block');
     }
   }
 

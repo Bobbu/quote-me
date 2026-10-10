@@ -32,7 +32,7 @@ class ApiService {
         return json.decode(response.body);
       } else if (response.statusCode == 500 && retryCount < 3) {
         await Future.delayed(Duration(milliseconds: 500 * (retryCount + 1)));
-        return getRandomQuoteWithClient(client, tags, retryCount: retryCount + 1);
+        return await getRandomQuoteWithClient(client, tags, retryCount: retryCount + 1);
       } else if (response.statusCode == 429) {
         return null; // Rate limited
       } else {
@@ -41,7 +41,7 @@ class ApiService {
     } catch (e) {
       if (retryCount < 3) {
         await Future.delayed(Duration(milliseconds: 500 * (retryCount + 1)));
-        return getRandomQuoteWithClient(client, tags, retryCount: retryCount + 1);
+        return await getRandomQuoteWithClient(client, tags, retryCount: retryCount + 1);
       }
       LoggerService.error('Error fetching quote', error: e);
       return null;
@@ -147,7 +147,7 @@ class ApiService {
       } else if (response.statusCode == 500) {
         // Retry logic for 500 errors
         await Future.delayed(Duration(milliseconds: 500));
-        return getRandomQuote(tags: tags);
+        return await getRandomQuote(tags: tags);
       } else if (response.statusCode == 429) {
         LoggerService.warning('⚠️ API rate limit reached');
         throw Exception('API rate limit reached. Please try again later.');

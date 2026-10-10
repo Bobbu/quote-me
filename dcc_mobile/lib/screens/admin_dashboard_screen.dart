@@ -180,21 +180,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     await _initializeSettings();
   }
 
-  Future<void> _checkAdminAccess() async {
-    // Verify user has admin privileges
-    final isAdmin = await AuthService.isUserInAdminGroup();
-    if (!isAdmin && mounted) {
-      // Redirect to login if not admin
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Admin access required'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      Navigator.of(context).pop();
-    }
-  }
-
   Future<void> _loadUserInfo() async {
     final email = await AuthService.getUserEmail();
     final name = await AuthService.getUserName();

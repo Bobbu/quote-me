@@ -10,8 +10,6 @@ import 'favorites_service.dart';
 
 
 class AuthService {
-  static bool _isConfigured = false;
-  
   static Future<void> configure() async {
     try {
       LoggerService.info('🔧 Configuring Amplify with proper OAuth settings');
@@ -19,7 +17,6 @@ class AuthService {
       // Check if Amplify is already configured
       if (Amplify.isConfigured) {
         LoggerService.info('✅ Amplify already configured');
-        _isConfigured = true;
         return;
       }
       
@@ -30,11 +27,9 @@ class AuthService {
       final String amplifyConfig = await rootBundle.loadString('lib/amplify_outputs.json');
       await Amplify.configure(amplifyConfig);
       
-      _isConfigured = true;
       LoggerService.info('✅ Amplify configured successfully with OAuth support');
     } catch (e) {
       LoggerService.error('❌ Failed to configure Amplify: $e', error: e);
-      _isConfigured = false;
       rethrow;
     }
   }
@@ -457,22 +452,18 @@ class AuthService {
         final idToken = session.userPoolTokensResult.value.idToken;
         final tokenString = idToken.toJson();
         
-        if (tokenString is String) {
-          final payload = _decodeJwtPayload(tokenString);
-          if (payload != null) {
-            LoggerService.info('🔍 Token payload keys: ${payload.keys.toList()}');
-            final email = payload['email'];
-            if (email is String && email.isNotEmpty) {
-              LoggerService.info('✅ Found email in token: $email');
-              return email;
-            } else {
-              LoggerService.warning('⚠️ Email field in token is empty or not a string: $email');
-            }
+        final payload = _decodeJwtPayload(tokenString);
+        if (payload != null) {
+          LoggerService.info('🔍 Token payload keys: ${payload.keys.toList()}');
+          final email = payload['email'];
+          if (email is String && email.isNotEmpty) {
+            LoggerService.info('✅ Found email in token: $email');
+            return email;
           } else {
-            LoggerService.warning('⚠️ Could not decode token payload');
+            LoggerService.warning('⚠️ Email field in token is empty or not a string: $email');
           }
         } else {
-          LoggerService.warning('⚠️ Token string is not a string: ${tokenString.runtimeType}');
+          LoggerService.warning('⚠️ Could not decode token payload');
         }
       } else {
         LoggerService.warning('⚠️ Session is not CognitoAuthSession or not signed in');
@@ -492,35 +483,31 @@ class AuthService {
         final idToken = session.userPoolTokensResult.value.idToken;
         final tokenString = idToken.toJson();
         
-        if (tokenString is String) {
-          final payload = _decodeJwtPayload(tokenString);
-          if (payload != null) {
-            LoggerService.info('🔍 Token payload keys for name: ${payload.keys.toList()}');
-            // Try different name fields that might be present
-            final name = payload['name'];
-            if (name is String && name.isNotEmpty) {
-              LoggerService.info('✅ Found name in token: $name');
-              return name;
-            }
-            
-            final givenName = payload['given_name'];
-            if (givenName is String && givenName.isNotEmpty) {
-              LoggerService.info('✅ Found given_name in token: $givenName');
-              return givenName;
-            }
-            
-            final nickname = payload['nickname'];
-            if (nickname is String && nickname.isNotEmpty) {
-              LoggerService.info('✅ Found nickname in token: $nickname');
-              return nickname;
-            }
-            
-            LoggerService.warning('⚠️ No name fields found in token payload');
-          } else {
-            LoggerService.warning('⚠️ Could not decode token payload for name');
+        final payload = _decodeJwtPayload(tokenString);
+        if (payload != null) {
+          LoggerService.info('🔍 Token payload keys for name: ${payload.keys.toList()}');
+          // Try different name fields that might be present
+          final name = payload['name'];
+          if (name is String && name.isNotEmpty) {
+            LoggerService.info('✅ Found name in token: $name');
+            return name;
           }
+          
+          final givenName = payload['given_name'];
+          if (givenName is String && givenName.isNotEmpty) {
+            LoggerService.info('✅ Found given_name in token: $givenName');
+            return givenName;
+          }
+          
+          final nickname = payload['nickname'];
+          if (nickname is String && nickname.isNotEmpty) {
+            LoggerService.info('✅ Found nickname in token: $nickname');
+            return nickname;
+          }
+          
+          LoggerService.warning('⚠️ No name fields found in token payload');
         } else {
-          LoggerService.warning('⚠️ Token string is not a string for name: ${tokenString.runtimeType}');
+          LoggerService.warning('⚠️ Could not decode token payload for name');
         }
       } else {
         LoggerService.warning('⚠️ Session is not CognitoAuthSession or not signed in for name');

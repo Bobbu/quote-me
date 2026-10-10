@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'auth_service.dart';
+import 'logger_service.dart';
 
 class OpenAIImageGenerator {
   static const int _timeoutSeconds = 30; // Quick response for job submission
@@ -32,7 +33,7 @@ class OpenAIImageGenerator {
 
       return response.statusCode == 200;
     } catch (e) {
-      print('Error saving custom image URL: $e');
+      LoggerService.error('Error saving custom image URL: $e', error: e);
       return false;
     }
   }
@@ -70,7 +71,7 @@ class OpenAIImageGenerator {
       // If no extraction pattern matches, return original URL
       return url;
     } catch (e) {
-      print('Error extracting direct image URL: $e');
+      LoggerService.error('Error extracting direct image URL: $e', error: e);
       // If extraction fails, return the original URL
       return url;
     }
@@ -152,45 +153,6 @@ class OpenAIImageGenerator {
     // For backward compatibility, return the job ID
     // The UI should be updated to handle async generation
     return jobId;
-  }
-
-  /// Generates a sophisticated prompt for consistent quote imagery
-  static String _buildImagePrompt({
-    required String quote,
-    required String author,
-    String? tags,
-  }) {
-    // Build a sophisticated prompt that creates consistent, professional imagery
-    final baseStyle = """
-Create a sophisticated, inspirational image that visually represents the essence of this quote.
-
-Style Guidelines:
-- Professional, high-quality digital art aesthetic
-- Warm, inviting color palette with subtle gradients
-- Soft, diffused lighting that creates depth and atmosphere
-- Clean composition with balanced visual elements
-- Slightly abstract or symbolic rather than literal interpretation
-- Suitable for displaying alongside inspirational text
-- 16:9 aspect ratio for versatile display
-
-Visual Elements to Consider:
-- Symbolic representations of the quote's core message
-- Natural elements like light, sky, water, or landscapes when appropriate
-- Geometric patterns or flowing lines that suggest growth, progress, or wisdom
-- Subtle textures that add depth without overwhelming the composition
-- Color psychology that matches the quote's emotional tone
-
-Quote: "$quote"
-Author: $author
-""";
-
-    // Add context based on tags if provided
-    if (tags != null && tags.isNotEmpty) {
-      final tagList = tags.split(',').map((t) => t.trim()).join(', ');
-      return '$baseStyle\nThematic Context: $tagList';
-    }
-
-    return baseStyle;
   }
 
   /// Generates a test image using the backend proxy

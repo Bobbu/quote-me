@@ -862,7 +862,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
         await Future.delayed(delay);
         
         // Recursive retry
-        return _getQuote(retryCount: retryCount + 1);
+        return await _getQuote(retryCount: retryCount + 1);
       } else {
         String errorMessage;
         if (response.statusCode == 429) {
@@ -893,7 +893,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
         });
         
         await Future.delayed(delay);
-        return _getQuote(retryCount: retryCount + 1);
+        return await _getQuote(retryCount: retryCount + 1);
       }
       
       setState(() {
@@ -1026,11 +1026,9 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
       builder: (context, constraints) {
         // Calculate max size to fit viewport while maintaining square aspect
         final screenHeight = MediaQuery.of(context).size.height;
-        final screenWidth = MediaQuery.of(context).size.width;
 
         // Reserve space for app bar (~56), padding (~100), and buttons (~150)
         final availableHeight = screenHeight - 306;
-        final availableWidth = screenWidth - 16; // Account for horizontal margins
 
         // Always fit within vertical viewport (prioritize height over width)
         final maxSize = availableHeight;
@@ -1193,11 +1191,9 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
       builder: (context, constraints) {
         // Calculate max size to fit viewport while maintaining square aspect
         final screenHeight = MediaQuery.of(context).size.height;
-        final screenWidth = MediaQuery.of(context).size.width;
 
         // Reserve space for app bar (~56), padding (~100), and buttons (~150)
         final availableHeight = screenHeight - 306;
-        final availableWidth = screenWidth - 16; // Account for horizontal margins
 
         // Always fit within vertical viewport (prioritize height over width)
         final maxSize = availableHeight;
@@ -1756,7 +1752,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
                         Text(
                           'Initializing...',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ],
