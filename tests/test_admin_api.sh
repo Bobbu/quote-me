@@ -13,8 +13,14 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-USER_POOL_ID="us-east-1_ecyuILBAu"
-CLIENT_ID="2idvhvlhgbheglr0hptel5j55"
+# Read Cognito IDs from the stack so the tests survive a scorched-earth redeploy
+STACK_NAME="quote-me-api"
+get_stack_output() {
+    aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+        --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text
+}
+USER_POOL_ID=$(get_stack_output UserPoolId)
+CLIENT_ID=$(get_stack_output UserPoolClientId)
 BASE_URL="https://dcc.anystupididea.com"
 ADMIN_GROUP="Admins"
 
@@ -91,10 +97,9 @@ get_admin_token() {
     
     echo -e "${YELLOW}🔐 Getting authentication token for $username...${NC}"
     
-    TOKEN=$(aws cognito-idp admin-initiate-auth \
-        --user-pool-id $USER_POOL_ID \
+    TOKEN=$(aws cognito-idp initiate-auth \
         --client-id $CLIENT_ID \
-        --auth-flow ADMIN_NO_SRP_AUTH \
+        --auth-flow USER_PASSWORD_AUTH \
         --auth-parameters USERNAME=$username,PASSWORD=$password \
         --query 'AuthenticationResult.IdToken' \
         --output text 2>/dev/null)
@@ -186,11 +191,14 @@ main() {
     test_endpoint "GET" "/admin/tags" 200 "Get all available tags"
     
     # Test 3: Create new quote
-    NEW_QUOTE_DATA='{
-        "quote": "Test quote for regression testing",
-        "author": "Test Author", 
-        "tags": ["Testing", "Regression", "Automation"]
-    }'
+    # Unique tag names so cleanup never touches real tags
+    TEST_TAG_PREFIX="zz-test-$(date +%s)"
+    TEST_TAGS=("$TEST_TAG_PREFIX-a" "$TEST_TAG_PREFIX-b" "$TEST_TAG_PREFIX-updated")
+    NEW_QUOTE_DATA="{
+        \"quote\": \"Test quote for regression testing\",
+        \"author\": \"Test Author\",
+        \"tags\": [\"${TEST_TAGS[0]}\", \"${TEST_TAGS[1]}\"]
+    }"
     test_endpoint "POST" "/admin/quotes" 201 "Create new quote" "$NEW_QUOTE_DATA"
     
     # Extract quote ID from the create response for update/delete tests
@@ -212,23 +220,37 @@ except:
         test_endpoint "POST" "/admin/quotes" 409 "Duplicate detection (should block)" "$NEW_QUOTE_DATA"
         
         # Test 6: Update the quote
-        UPDATE_QUOTE_DATA='{
-            "quote": "Updated test quote for regression testing",
-            "author": "Updated Test Author",
-            "tags": ["Testing", "Regression", "Automation", "Updated"]
-        }'
+        UPDATE_QUOTE_DATA="{
+            \"quote\": \"Updated test quote for regression testing\",
+            \"author\": \"Updated Test Author\",
+            \"tags\": [\"${TEST_TAGS[0]}\", \"${TEST_TAGS[1]}\", \"${TEST_TAGS[2]}\"]
+        }"
         test_endpoint "PUT" "/admin/quotes/$CREATED_QUOTE_ID" 200 "Update quote" "$UPDATE_QUOTE_DATA"
         
-        # Test 7: Delete the quote (cleanup)
+        # Test 7: Verify tags from created/updated quotes were registered in the TagsTable
+        test_endpoint "GET" "/admin/tags" 200 "Verify tags list includes new quote tags"
+        missing_tags=$(echo "$body" | python3 -c "
+import sys, json
+names = {t['name'] for t in json.load(sys.stdin)['tags']}
+print(' '.join(t for t in sys.argv[1:] if t not in names))
+" "${TEST_TAGS[@]}")
+        if [ -z "$missing_tags" ]; then
+            echo -e "${GREEN}✅ All new quote tags registered${NC}"
+        else
+            echo -e "${RED}❌ Tags missing from tags list: $missing_tags${NC}"
+            exit 1
+        fi
+        
+        # Test 8: Delete the quote and its test tags (cleanup)
         test_endpoint "DELETE" "/admin/quotes/$CREATED_QUOTE_ID" 200 "Delete quote"
+        for tag in "${TEST_TAGS[@]}"; do
+            test_endpoint "DELETE" "/admin/tags/$tag" 200 "Delete test tag $tag"
+        done
     else
         echo -e "${RED}❌ Could not extract quote ID, skipping update/delete tests${NC}"
     fi
     
-    # Test 6: Verify tags metadata was updated
-    test_endpoint "GET" "/admin/tags" 200 "Verify tags metadata includes new tags"
-    
-    # Test 7: List all users (new users endpoint)
+    # Test 9: List all users (new users endpoint)
     test_endpoint "GET" "/admin/users" 200 "List all users with attributes"
     
     echo

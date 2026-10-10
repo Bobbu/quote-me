@@ -8,8 +8,20 @@ import time
 
 # Configuration
 BASE_URL = "https://dcc.anystupididea.com"
-USER_POOL_ID = "us-east-1_ecyuILBAu"
-CLIENT_ID = "2idvhvlhgbheglr0hptel5j55"
+STACK_NAME = "quote-me-api"
+
+
+def get_stack_output(key):
+    """Read a CloudFormation output so the test survives a scorched-earth redeploy"""
+    return subprocess.run(
+        ['aws', 'cloudformation', 'describe-stacks', '--stack-name', STACK_NAME,
+         '--query', f"Stacks[0].Outputs[?OutputKey=='{key}'].OutputValue", '--output', 'text'],
+        capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+USER_POOL_ID = get_stack_output('UserPoolId')
+CLIENT_ID = get_stack_output('UserPoolClientId')
 ADMIN_GROUP = "Admins"
 
 # Generate unique test user credentials
@@ -94,10 +106,9 @@ def get_admin_token():
     """Get admin authentication token"""
     try:
         cmd = [
-            'aws', 'cognito-idp', 'admin-initiate-auth',
-            '--user-pool-id', USER_POOL_ID,
+            'aws', 'cognito-idp', 'initiate-auth',
             '--client-id', CLIENT_ID,
-            '--auth-flow', 'ADMIN_NO_SRP_AUTH',
+            '--auth-flow', 'USER_PASSWORD_AUTH',
             '--auth-parameters', f'USERNAME={TEST_USERNAME},PASSWORD={TEST_PASSWORD}'
         ]
         

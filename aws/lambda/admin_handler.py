@@ -137,35 +137,26 @@ def create_response(status_code, body, headers=None):
         "body": json.dumps(body) if isinstance(body, (dict, list)) else body
     }
 
-def update_tags_metadata(new_tags):
-    """Update the tags metadata record with new tags"""
-    try:
-        metadata_id = "TAGS_METADATA"
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        # Get current tags metadata
+def register_tags(new_tags):
+    """Ensure every tag exists in the TagsTable (the single source of truth for tags).
+    Existing tags are left untouched. Returns the list of tags that were newly added."""
+    added = []
+    for tag in {t.strip() for t in (new_tags or []) if isinstance(t, str) and t.strip()}:
         try:
-            response = table.get_item(Key={'id': metadata_id})
-            current_tags = set(response.get('Item', {}).get('tags', []))
-        except:
-            current_tags = set()
-        
-        # Merge in new tags
-        if new_tags:
-            current_tags.update(new_tags)
-        
-        # Update metadata record
-        table.put_item(Item={
-            'id': metadata_id,
-            'tags': sorted(list(current_tags)),  # Keep sorted for consistency
-            'updated_at': timestamp
-        })
-        
-        print(f"✅ Updated tags metadata: {sorted(list(current_tags))}")
-        
-    except Exception as e:
-        print(f"❌ Error updating tags metadata: {e}")
-        # Don't fail the main operation if metadata update fails
+            tags_table.put_item(
+                Item={'tag': tag},
+                ConditionExpression='attribute_not_exists(#t)',
+                ExpressionAttributeNames={'#t': 'tag'}
+            )
+            added.append(tag)
+        except tags_table.meta.client.exceptions.ConditionalCheckFailedException:
+            pass  # Already registered
+        except Exception as e:
+            print(f"❌ Error registering tag '{tag}': {e}")
+            # Don't fail the main operation if tag registration fails
+    if added:
+        print(f"✅ Registered new tags: {sorted(added)}")
+    return added
 
 def get_tags_metadata():
     """Get all available tags from tags table with usage counts"""
@@ -192,24 +183,37 @@ def get_tags_metadata():
         for tag_name in tag_names:
             tag_usage_counts[tag_name] = 0
         
-        # Scan all quotes to count tag usage
+        # Scan all quotes to count tag usage, noting any tags used by quotes
+        # that were never registered in the TagsTable
         print(f"Counting usage for {len(tag_names)} tags...")
-        quote_scan_kwargs = {'ProjectionExpression': 'tags'}
-        
+        quote_scan_kwargs = {'ProjectionExpression': 'id, tags'}
+        unregistered_tags = set()
+
         while True:
             quotes_response = table.scan(**quote_scan_kwargs)
-            
+
             for quote_item in quotes_response.get('Items', []):
+                # Skip the legacy tags metadata record
+                if quote_item.get('id') == 'TAGS_METADATA':
+                    continue
                 quote_tags = quote_item.get('tags', [])
                 if isinstance(quote_tags, list):
                     for tag in quote_tags:
-                        if tag in tag_usage_counts:
-                            tag_usage_counts[tag] += 1
-            
+                        if tag not in tag_usage_counts:
+                            unregistered_tags.add(tag)
+                            tag_usage_counts[tag] = 0
+                        tag_usage_counts[tag] += 1
+
             if 'LastEvaluatedKey' not in quotes_response:
                 break
             quote_scan_kwargs['ExclusiveStartKey'] = quotes_response['LastEvaluatedKey']
-        
+
+        # Self-heal: register tags that quotes use but the TagsTable is missing
+        if unregistered_tags:
+            print(f"🩹 Found {len(unregistered_tags)} unregistered tags in quotes: {sorted(unregistered_tags)}")
+            register_tags(unregistered_tags)
+            tag_names.update(t for t in unregistered_tags if isinstance(t, str) and t.strip())
+
         # Build final tags list with usage counts
         tags = []
         for tag_name in sorted(tag_names):
@@ -333,8 +337,8 @@ def handle_create_quote(event, user_claims):
         # Save to DynamoDB
         table.put_item(Item=quote_item)
         
-        # Update tags metadata
-        update_tags_metadata(quote_item['tags'])
+        # Register any new tags in the TagsTable
+        register_tags(quote_item['tags'])
         
         return create_response(201, {
             "message": "Quote created successfully",
@@ -398,8 +402,8 @@ def handle_update_quote(event, user_claims):
         # Save updated item
         table.put_item(Item=updated_item)
         
-        # Update tags metadata
-        update_tags_metadata(updated_item['tags'])
+        # Register any new tags in the TagsTable
+        register_tags(updated_item['tags'])
         
         return create_response(200, {
             "message": "Quote updated successfully",
@@ -669,31 +673,15 @@ def handle_add_tag(event, user_claims):
         if not new_tag:
             return create_response(400, {"error": "Tag name is required"})
         
-        # Get current tags
-        current_tags = set(get_tags_metadata())
-        
-        if new_tag in current_tags:
+        # Register in the TagsTable (fails if it already exists)
+        if not register_tags([new_tag]):
             return create_response(400, {"error": f"Tag '{new_tag}' already exists"})
-        
-        # Add new tag
-        current_tags.add(new_tag)
-        
-        # Update metadata
-        metadata_id = "TAGS_METADATA"
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        table.put_item(Item={
-            'id': metadata_id,
-            'tags': sorted(list(current_tags)),
-            'updated_at': timestamp
-        })
         
         print(f"✅ Added new tag: {new_tag}")
         
         return create_response(201, {
             "message": f"Successfully added tag '{new_tag}'",
-            "tag": new_tag,
-            "all_tags": sorted(list(current_tags))
+            "tag": new_tag
         })
         
     except json.JSONDecodeError:
@@ -712,6 +700,8 @@ def handle_update_tag(event, user_claims):
         old_tag = event.get('pathParameters', {}).get('tag')
         if not old_tag:
             return create_response(400, {"error": "Tag name is required in path"})
+        import urllib.parse
+        old_tag = urllib.parse.unquote(old_tag)
         
         # Parse request body
         body = json.loads(event.get('body', '{}'))
@@ -723,43 +713,31 @@ def handle_update_tag(event, user_claims):
         if old_tag == new_tag:
             return create_response(400, {"error": "New tag name must be different from old tag name"})
         
-        # Get current tags
-        current_tags = set(get_tags_metadata())
-        
-        if old_tag not in current_tags:
+        if 'Item' not in tags_table.get_item(Key={'tag': old_tag}):
             return create_response(404, {"error": f"Tag '{old_tag}' not found"})
         
-        if new_tag in current_tags:
+        if not register_tags([new_tag]):
             return create_response(400, {"error": f"Tag '{new_tag}' already exists"})
         
-        # Update tag in metadata
-        current_tags.remove(old_tag)
-        current_tags.add(new_tag)
-        
-        # Update metadata
-        metadata_id = "TAGS_METADATA"
-        timestamp = datetime.utcnow().isoformat() + 'Z'
-        
-        table.put_item(Item={
-            'id': metadata_id,
-            'tags': sorted(list(current_tags)),
-            'updated_at': timestamp
-        })
-        
         # Update all quotes that use this tag
-        response = table.scan()
-        all_items = response.get('Items', [])
+        timestamp = datetime.utcnow().isoformat() + 'Z'
+        scan_kwargs = {'FilterExpression': Attr('tags').contains(old_tag)}
         quotes_updated = 0
         
-        for item in all_items:
-            if item.get('id') != 'TAGS_METADATA' and 'tags' in item:
-                if old_tag in item['tags']:
-                    # Update the tags in this quote
-                    updated_tags = [new_tag if tag == old_tag else tag for tag in item['tags']]
-                    item['tags'] = updated_tags
-                    item['updated_at'] = timestamp
-                    table.put_item(Item=item)
-                    quotes_updated += 1
+        while True:
+            response = table.scan(**scan_kwargs)
+            for item in response.get('Items', []):
+                if item.get('id') == 'TAGS_METADATA':
+                    continue
+                item['tags'] = [new_tag if tag == old_tag else tag for tag in item['tags']]
+                item['updated_at'] = timestamp
+                table.put_item(Item=item)
+                quotes_updated += 1
+            if 'LastEvaluatedKey' not in response:
+                break
+            scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+        
+        tags_table.delete_item(Key={'tag': old_tag})
         
         print(f"✅ Updated tag '{old_tag}' to '{new_tag}' in {quotes_updated} quotes")
         
@@ -767,8 +745,7 @@ def handle_update_tag(event, user_claims):
             "message": f"Successfully updated tag '{old_tag}' to '{new_tag}'",
             "old_tag": old_tag,
             "new_tag": new_tag,
-            "quotes_updated": quotes_updated,
-            "all_tags": sorted(list(current_tags))
+            "quotes_updated": quotes_updated
         })
         
     except json.JSONDecodeError:
