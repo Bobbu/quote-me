@@ -566,14 +566,15 @@ def handle_get_tags(event, user_claims):
         return create_response(500, {"error": "Internal server error"})
 
 def get_used_tags():
-    """Get all tags that are actually used in quotes"""
-    try:
-        # Scan all quotes to find used tags
-        response = table.scan()
-        quotes = response.get('Items', [])
-        
-        used_tags = set()
-        for quote in quotes:
+    """Get all tags that are actually used in quotes.
+    Scans every page of the quotes table. Errors propagate so callers never
+    mistake a failed scan for "no tags are used" and delete real tags."""
+    used_tags = set()
+    scan_kwargs = {'ProjectionExpression': 'id, tags'}
+    
+    while True:
+        response = table.scan(**scan_kwargs)
+        for quote in response.get('Items', []):
             # Skip metadata records
             if quote.get('id') == 'TAGS_METADATA':
                 continue
@@ -582,11 +583,11 @@ def get_used_tags():
             if isinstance(quote_tags, list):
                 used_tags.update(quote_tags)
         
-        return sorted(list(used_tags))
-        
-    except Exception as e:
-        print(f"Error getting used tags: {e}")
-        return []
+        if 'LastEvaluatedKey' not in response:
+            break
+        scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+    
+    return sorted(list(used_tags))
 
 def handle_cleanup_unused_tags(event, user_claims):
     """Handle DELETE /admin/tags/unused"""

@@ -8,8 +8,20 @@ import time
 
 # Configuration
 BASE_URL = "https://dcc.anystupididea.com"
-USER_POOL_ID = "us-east-1_ecyuILBAu"
-CLIENT_ID = "2idvhvlhgbheglr0hptel5j55"
+STACK_NAME = "quote-me-api"
+
+
+def get_stack_output(key):
+    """Read a CloudFormation output so the test survives a scorched-earth redeploy"""
+    return subprocess.run(
+        ['aws', 'cloudformation', 'describe-stacks', '--stack-name', STACK_NAME,
+         '--query', f"Stacks[0].Outputs[?OutputKey=='{key}'].OutputValue", '--output', 'text'],
+        capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+USER_POOL_ID = get_stack_output('UserPoolId')
+CLIENT_ID = get_stack_output('UserPoolClientId')
 ADMIN_GROUP = "Admins"
 
 # Generate unique test user credentials
@@ -94,10 +106,9 @@ def get_admin_token():
     """Get admin authentication token"""
     try:
         cmd = [
-            'aws', 'cognito-idp', 'admin-initiate-auth',
-            '--user-pool-id', USER_POOL_ID,
+            'aws', 'cognito-idp', 'initiate-auth',
             '--client-id', CLIENT_ID,
-            '--auth-flow', 'ADMIN_NO_SRP_AUTH',
+            '--auth-flow', 'USER_PASSWORD_AUTH',
             '--auth-parameters', f'USERNAME={TEST_USERNAME},PASSWORD={TEST_PASSWORD}'
         ]
         
@@ -127,13 +138,13 @@ def test_get_tags(token):
     
     if response.status_code == 200:
         data = response.json()
-        tags = data.get('tags', [])
-        count = data.get('count', 0)
-        print(f"✅ Found {count} tags: {tags}")
+        # Map tag name -> number of quotes using it (counted server-side across all quotes)
+        tags = {t['name']: t.get('quote_count', 0) for t in data.get('tags', [])}
+        print(f"✅ Found {len(tags)} tags")
         return tags
     else:
         print(f"❌ Failed to get tags: {response.status_code} - {response.text}")
-        return []
+        return None
 
 def test_cleanup_unused_tags(token):
     """Test cleaning up unused tags"""
@@ -163,32 +174,6 @@ def test_cleanup_unused_tags(token):
         print(f"❌ Failed to cleanup tags: {response.status_code} - {response.text}")
         return False
 
-def test_get_quotes(token):
-    """Test getting all quotes to see their tags"""
-    print("📝 Getting all quotes to verify tag usage...")
-    
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Content-Type': 'application/json'
-    }
-    
-    response = requests.get(f"{BASE_URL}/admin/quotes", headers=headers)
-    
-    if response.status_code == 200:
-        data = response.json()
-        quotes = data.get('quotes', [])
-        
-        all_used_tags = set()
-        for quote in quotes:
-            tags = quote.get('tags', [])
-            all_used_tags.update(tags)
-        
-        print(f"✅ Found {len(quotes)} quotes using these tags: {sorted(list(all_used_tags))}")
-        return sorted(list(all_used_tags))
-    else:
-        print(f"❌ Failed to get quotes: {response.status_code} - {response.text}")
-        return []
-
 def main():
     print("🧪 Testing Tag Cleanup Functionality")
     print("=" * 50)
@@ -212,33 +197,40 @@ def main():
         print("✅ Successfully authenticated as admin")
         print()
         
-        # Step 1: Get current tags
+        # Step 1: Get current tags with usage counts
         current_tags = test_get_tags(token)
+        if current_tags is None:
+            sys.exit(1)
+        used_tags = {name for name, count in current_tags.items() if count > 0}
+        unused_tags = set(current_tags) - used_tags
         print()
         
-        # Step 2: Get quotes and their used tags
-        used_tags = test_get_quotes(token)
+        # Step 2: Show which tags should be cleaned up
+        if unused_tags:
+            print(f"🗑️  Unused tags that will be cleaned up: {sorted(unused_tags)}")
+        else:
+            print("✨ No unused tags found - all tags are being used!")
         print()
         
-        # Step 3: Show which tags would be cleaned up
-        if current_tags and used_tags:
-            unused_tags = set(current_tags) - set(used_tags)
-            if unused_tags:
-                print(f"🗑️  Unused tags that will be cleaned up: {sorted(list(unused_tags))}")
-            else:
-                print("✨ No unused tags found - all tags are being used!")
+        # Step 3: Run cleanup
+        if not test_cleanup_unused_tags(token):
+            sys.exit(1)
         print()
         
-        # Step 4: Test cleanup
-        cleanup_success = test_cleanup_unused_tags(token)
-        print()
-        
-        # Step 5: Verify final state
-        if cleanup_success:
-            print("🔍 Verifying final state...")
-            final_tags = test_get_tags(token)
-            print(f"✅ Final tag list: {final_tags}")
-        
+        # Step 4: Verify no tag in use was removed and every unused tag is gone
+        print("🔍 Verifying final state...")
+        final_tags = test_get_tags(token)
+        if final_tags is None:
+            sys.exit(1)
+        lost = used_tags - set(final_tags)
+        lingering = unused_tags & set(final_tags)
+        if lost:
+            print(f"❌ Cleanup removed tags that are still in use: {sorted(lost)}")
+            sys.exit(1)
+        if lingering:
+            print(f"❌ Unused tags were not removed: {sorted(lingering)}")
+            sys.exit(1)
+        print(f"✅ All {len(used_tags)} tags in use were kept; {len(unused_tags)} unused removed")
         print()
         print("🎉 Tag cleanup test completed!")
         
