@@ -72,6 +72,7 @@ python3 tests/test_tag_editor.py
 # Subscription & Daily Nuggets Tests
 python3 tests/test_subscription_sync.py
 python3 tests/test_rob_subscription.py
+python3 tests/test_daily_nuggets_tags.py   # Per-subscriber tag filter (live)
 ```
 
 ### Flutter Development

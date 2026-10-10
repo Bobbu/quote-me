@@ -661,6 +661,7 @@ class _QuoteScreenState extends State<QuoteScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('audio_enabled', _audioEnabled);
     await prefs.setStringList('selected_categories', _selectedCategories.toList());
+    unawaited(DailyNuggetsService.syncTagFilter(_selectedCategories));
     await prefs.setInt('quote_retrieval_limit', _quoteRetrievalLimit);
     
     // Save selected voice

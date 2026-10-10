@@ -773,6 +773,14 @@ Resources:
             Method: OPTIONS
             Auth:
               ApiKeyRequired: false
+        OptionsSubscriptionsTags:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QuoteMeApi
+            Path: /subscriptions/tags
+            Method: OPTIONS
+            Auth:
+              ApiKeyRequired: false
         # Public endpoints OPTIONS
         OptionsQuote:
           Type: Api
@@ -985,6 +993,15 @@ Resources:
             RestApiId: !Ref QuoteMeApi
             Path: /subscriptions
             Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+              ApiKeyRequired: false
+        UpdateSubscriptionTags:
+          Type: Api
+          Properties:
+            RestApiId: !Ref QuoteMeApi
+            Path: /subscriptions/tags
+            Method: PUT
             Auth:
               Authorizer: CognitoAuthorizer
               ApiKeyRequired: false

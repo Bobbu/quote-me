@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
 import 'logger_service.dart';
 
@@ -115,6 +116,7 @@ class DailyNuggetsService {
         'delivery_method': deliveryMethod,
         'timezone': timezone,
         'notification_preferences': notificationPreferences,
+        'tags': await _savedTagFilter(),
       });
 
       final response = await http.put(
@@ -139,6 +141,34 @@ class DailyNuggetsService {
     } catch (e) {
       LoggerService.error('❌ Error updating subscription: $e', error: e);
       rethrow;
+    }
+  }
+
+  /// The tag filter chosen in Settings (stored on device); 'All' means no filter
+  static Future<List<String>> _savedTagFilter() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList('selected_categories') ?? ['All'];
+  }
+
+  /// Sync the Settings tag filter to the user's subscription so their daily quote
+  /// matches it. Does nothing when signed out; failures are logged, never thrown.
+  static Future<void> syncTagFilter(Set<String> categories) async {
+    try {
+      if (!await AuthService.isSignedIn()) return;
+
+      final response = await http.put(
+        Uri.parse('$_baseUrl/subscriptions/tags'),
+        headers: await _getHeaders(),
+        body: json.encode({'tags': categories.toList()}),
+      );
+
+      if (response.statusCode == 200) {
+        LoggerService.debug('✅ Daily Nuggets tag filter synced: $categories');
+      } else {
+        LoggerService.error('❌ Failed to sync Daily Nuggets tag filter: ${response.statusCode}');
+      }
+    } catch (e) {
+      LoggerService.error('❌ Error syncing Daily Nuggets tag filter: $e', error: e);
     }
   }
 

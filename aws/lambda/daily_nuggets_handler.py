@@ -90,6 +90,9 @@ def handler(event, context):
         elif path == '/subscriptions' and http_method == 'PUT':
             body = json.loads(event.get('body', '{}'))
             return update_subscription(user_email, body)
+        elif path == '/subscriptions/tags' and http_method == 'PUT':
+            body = json.loads(event.get('body', '{}'))
+            return update_subscription_tags(user_email, body)
         elif path == '/subscriptions' and http_method == 'DELETE':
             return delete_subscription(user_email)
         elif path == '/subscriptions/test' and http_method == 'POST':
@@ -224,10 +227,15 @@ def update_subscription(email, body):
             item['notificationPreferences'] = {'deliveryHour': 8}
             logger.info("📱 No notification preferences provided - setting default delivery hour to 8 AM")
         
-        # Check if subscription exists to preserve created_at
+        # Check if subscription exists to preserve created_at and tag filter
         existing = subscriptions_table.get_item(Key={'email': email})
         if 'Item' in existing:
             item['created_at'] = existing['Item'].get('created_at', item['created_at'])
+            item['tags'] = existing['Item'].get('tags', [])
+        
+        # Tag filter for daily quote selection (empty means all tags)
+        if 'tags' in body:
+            item['tags'] = normalize_tag_filter(body['tags'])
         
         # Save to DynamoDB
         subscriptions_table.put_item(Item=item)
@@ -249,6 +257,55 @@ def update_subscription(email, body):
             'statusCode': 500,
             'headers': CORS_HEADERS,
             'body': json.dumps({'error': 'Failed to update subscription'})
+        }
+
+def normalize_tag_filter(tags):
+    """Normalize a subscriber's tag filter. An empty list means all tags."""
+    if not isinstance(tags, list):
+        raise ValueError("'tags' must be an array")
+    cleaned = sorted({t.strip() for t in tags if isinstance(t, str) and t.strip()})
+    return [] if 'All' in cleaned else cleaned
+
+def update_subscription_tags(email, body):
+    """Sync the user's tag filter (from the app's Settings) onto their subscription.
+    No-op if the user has no subscription record; the filter is sent again when they subscribe."""
+    try:
+        tags = normalize_tag_filter(body.get('tags', []))
+    except ValueError as e:
+        return {
+            'statusCode': 400,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'error': str(e)})
+        }
+    
+    try:
+        subscriptions_table.update_item(
+            Key={'email': email},
+            UpdateExpression='SET tags = :tags, updated_at = :now',
+            ConditionExpression='attribute_exists(email)',
+            ExpressionAttributeValues={
+                ':tags': tags,
+                ':now': datetime.now(timezone.utc).isoformat()
+            }
+        )
+        logger.info(f"Tag filter updated for {email}: {tags or 'All'}")
+        return {
+            'statusCode': 200,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'message': 'Tag filter updated', 'tags': tags})
+        }
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            return {
+                'statusCode': 200,
+                'headers': CORS_HEADERS,
+                'body': json.dumps({'message': 'No subscription; tag filter not stored', 'tags': tags})
+            }
+        logger.error(f"Error updating tag filter: {str(e)}")
+        return {
+            'statusCode': 500,
+            'headers': CORS_HEADERS,
+            'body': json.dumps({'error': 'Failed to update tag filter'})
         }
 
 def delete_subscription(email):
@@ -282,12 +339,16 @@ def handle_scheduled_delivery(event):
         logger.info(f"Processing daily delivery for UTC hour: {hour_utc}")
 
         # Query all active subscriptions with email delivery
-        response = subscriptions_table.scan(
-            FilterExpression=Attr('is_subscribed').eq(True) &
-                           Attr('delivery_method').eq('email')
-        )
-
-        all_subscribers = response.get('Items', [])
+        scan_kwargs = {
+            'FilterExpression': Attr('is_subscribed').eq(True) & Attr('delivery_method').eq('email')
+        }
+        all_subscribers = []
+        while True:
+            response = subscriptions_table.scan(**scan_kwargs)
+            all_subscribers.extend(response.get('Items', []))
+            if 'LastEvaluatedKey' not in response:
+                break
+            scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
 
         # Timezone offset mapping (without pytz dependency)
         # This handles US timezones and a few common ones
@@ -345,10 +406,15 @@ def handle_scheduled_delivery(event):
                 logger.error(f"Error processing timezone for {subscriber['email']}: {str(e)}")
         logger.info(f"Found {len(subscribers)} to email at UTC hour {hour_utc}")
         
-        # Get today's quote
-        quote_data = get_daily_quote()
+        if not subscribers:
+            return {
+                'statusCode': 200,
+                'body': json.dumps({'message': f'No subscribers for UTC hour {hour_utc}', 'sent': 0, 'failed': 0})
+            }
         
-        if not quote_data:
+        # Load quotes once, then pick a quote per subscriber that matches their tag filter
+        all_quotes = load_all_quotes()
+        if not all_quotes:
             logger.error("No quote available for today")
             return {
                 'statusCode': 500,
@@ -361,6 +427,7 @@ def handle_scheduled_delivery(event):
         
         for subscriber in subscribers:
             try:
+                quote_data = get_daily_quote(subscriber.get('tags', []), all_quotes)
                 send_daily_email(subscriber['email'], quote_data)
                 success_count += 1
             except Exception as e:
@@ -385,27 +452,55 @@ def handle_scheduled_delivery(event):
             'body': json.dumps({'error': str(e)})
         }
 
-def get_daily_quote():
-    """Get a random quote for daily delivery"""
+def load_all_quotes():
+    """Load every quote (all pages) so each subscriber can get a quote matching their tags"""
+    quotes = []
+    scan_kwargs = {
+        'ProjectionExpression': '#id, #q, #a, #t',
+        'ExpressionAttributeNames': {'#id': 'id', '#q': 'quote', '#a': 'author', '#t': 'tags'}
+    }
+    while True:
+        response = quotes_table.scan(**scan_kwargs)
+        for item in response.get('Items', []):
+            # Skip non-quote records (e.g. image generation jobs)
+            if item.get('quote') and item.get('author'):
+                quotes.append(item)
+        if 'LastEvaluatedKey' not in response:
+            break
+        scan_kwargs['ExclusiveStartKey'] = response['LastEvaluatedKey']
+    return quotes
+
+def quote_tags(quote):
+    """Return a quote's tags as a list (handles legacy comma-separated strings)"""
+    tags = quote.get('tags', [])
+    if isinstance(tags, str):
+        return [t.strip() for t in tags.split(',') if t.strip()]
+    return tags if isinstance(tags, list) else []
+
+def get_daily_quote(tag_filter=None, quotes=None):
+    """Get a random quote with at least one tag from tag_filter.
+    An empty filter means any quote; if nothing matches, falls back to any quote."""
     try:
-        # Get all quotes using a simple scan (compatible with quote-me-quotes table)
-        response = quotes_table.scan(
-            Limit=1000
-        )
-        
-        items = response.get('Items', [])
-        if not items:
+        if quotes is None:
+            quotes = load_all_quotes()
+        if not quotes:
             logger.error("No quotes found in database")
             return None
         
-        # Select a random quote (same as optimized quote handler)
-        random_quote = random.choice(items)
+        wanted = {t.casefold() for t in (tag_filter or [])}
+        candidates = quotes
+        if wanted:
+            candidates = [q for q in quotes if wanted & {t.casefold() for t in quote_tags(q)}]
+            if not candidates:
+                logger.warning(f"No quotes match tag filter {sorted(tag_filter)}; using any quote")
+                candidates = quotes
         
+        random_quote = random.choice(candidates)
         return {
             'id': random_quote.get('id', ''),
             'quote': random_quote.get('quote', ''),
             'author': random_quote.get('author', ''),
-            'tags': random_quote.get('tags', [])
+            'tags': quote_tags(random_quote)
         }
         
     except Exception as e:
@@ -561,7 +656,8 @@ def format_tags_html(tags):
 def send_test_email(email):
     """Send a test email immediately (for testing purposes)"""
     try:
-        quote_data = get_daily_quote()
+        subscription = subscriptions_table.get_item(Key={'email': email}).get('Item', {})
+        quote_data = get_daily_quote(subscription.get('tags', []))
         if not quote_data:
             return {
                 'statusCode': 404,
@@ -656,8 +752,8 @@ def send_test_notification(email):
                 'body': json.dumps({'error': 'No FCM token found. Please enable push notifications first.'})
             }
         
-        # Get a random quote
-        quote_data = get_daily_quote()
+        # Get a random quote matching the subscriber's tag filter
+        quote_data = get_daily_quote(subscription.get('tags', []))
         if not quote_data:
             return {
                 'statusCode': 404,

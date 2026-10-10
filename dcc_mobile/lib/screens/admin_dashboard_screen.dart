@@ -10,6 +10,7 @@ import '../helpers/download_helper_stub.dart'
     if (dart.library.html) '../helpers/download_helper_web.dart';
 import '../services/auth_service.dart';
 import '../services/admin_api_service.dart';
+import '../services/daily_nuggets_service.dart';
 import '../services/logger_service.dart';
 import '../services/export_service.dart';
 import '../widgets/export_destination_dialog.dart';
@@ -1212,6 +1213,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('audio_enabled', audioEnabled);
       await prefs.setStringList('selected_categories', categories.toList());
+      unawaited(DailyNuggetsService.syncTagFilter(categories));
       await prefs.setInt('quote_retrieval_limit', quoteRetrievalLimit);
       await prefs.setInt('max_returned_quotes', maxReturnedQuotes);
       await prefs.setDouble('speech_rate', speechRate);
