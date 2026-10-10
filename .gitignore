@@ -24,3 +24,7 @@ samconfig.toml
 
 # experoments
 experiments/
+
+# Python bytecode
+__pycache__/
+*.pyc
