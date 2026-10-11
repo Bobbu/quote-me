@@ -81,6 +81,8 @@ cd dcc_mobile
 flutter pub get
 flutter run       # iOS/Android
 flutter build web --release  # Web
+flutter test                 # Unit + widget tests (headless)
+flutter test integration_test -d macos  # End-to-end flow (live API)
 ```
 
 ### Web Deployment

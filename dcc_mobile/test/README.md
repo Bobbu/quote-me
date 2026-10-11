@@ -14,12 +14,19 @@ test/
 │   ├── api_service_test.dart
 │   ├── logger_service_test.dart
 │   └── auth_service_test.dart (future)
-├── screens/                 # Widget tests for screens
-│   ├── quote_screen_test.dart
-│   └── settings_screen_test.dart (future)
-└── integration/             # Integration tests
-    └── app_flow_test.dart
+├── helpers/
+│   └── platform_mocks.dart  # Fake .env + plugin stubs for headless widget tests
+└── screens/                 # Widget tests for screens
+    ├── quote_screen_test.dart
+    └── settings_screen_test.dart (future)
+
+integration_test/            # On-device tests (live public API)
+└── app_flow_test.dart
 ```
+
+Widget tests never call `pumpAndSettle()` on app screens: Amplify can't finish
+configuring headlessly, so the "Initializing..." spinner never stops. Use
+`pumpFrames()` from `helpers/platform_mocks.dart` instead.
 
 ## Testing Levels
 
@@ -55,7 +62,7 @@ test/
 - ✅ Loading states
 - ✅ Responsive design
 
-### 3. Integration Tests (`test/integration/`)
+### 3. Integration Tests (`integration_test/`)
 
 **Purpose**: Test complete user workflows and app behavior.
 
@@ -77,8 +84,8 @@ flutter test
 # Run specific test file
 flutter test test/services/api_service_test.dart
 
-# Run integration tests (requires device/simulator)
-flutter test integration_test/app_flow_test.dart
+# Run integration tests (requires a device; macOS desktop works)
+flutter test integration_test -d macos
 
 # Run tests with coverage
 flutter test --coverage

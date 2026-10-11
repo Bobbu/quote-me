@@ -98,12 +98,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     _testTts.setCompletionHandler(() {
+      if (!mounted) return;
       setState(() {
         _isTestSpeaking = false;
       });
     });
 
     _testTts.setErrorHandler((msg) {
+      if (!mounted) return;
       setState(() {
         _isTestSpeaking = false;
       });
@@ -113,6 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadAvailableVoices() async {
     try {
       List<dynamic> voices = await _testTts.getVoices;
+      if (!mounted) return;
       setState(() {
         _availableVoices = voices.map((voice) => Map<String, dynamic>.from(voice)).toList();
         _voicesLoaded = true;
@@ -136,6 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       });
     } catch (e) {
       LoggerService.error('Error loading voices', error: e);
+      if (!mounted) return;
       setState(() {
         _voicesLoaded = true;
       });
@@ -148,7 +152,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       // Load tags from public API (no authentication required)
       final apiTags = await ApiService.getTags();
-      
+      if (!mounted) return;
+
       setState(() {
         // Ensure "All" is always first in the list for consistent UI
         _availableCategories = apiTags.where((tag) => tag != 'All').toList();
@@ -162,6 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       LoggerService.error('❌ Failed to load dynamic tags, using fallback categories', error: e);
       
       // Use fallback categories if API fails
+      if (!mounted) return;
       setState(() {
         _availableCategories = List.from(_fallbackCategories);
         _categoriesLoaded = true;
@@ -172,6 +178,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _loadThemePreference() async {
     final prefs = await SharedPreferences.getInstance();
     final themeString = prefs.getString('theme_mode') ?? 'system';
+    if (!mounted) return;
     setState(() {
       _selectedTheme = themeString;
     });

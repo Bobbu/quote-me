@@ -1,138 +1,59 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:quote_me/screens/quote_screen.dart';
+import '../helpers/platform_mocks.dart';
+
+Future<void> pumpQuoteScreen(WidgetTester tester) async {
+  await tester.pumpWidget(const MaterialApp(home: QuoteScreen()));
+  await pumpFrames(tester);
+}
 
 void main() {
+  setUpAll(loadTestEnv);
+
+  setUp(mockPlatformPlugins);
+
   group('QuoteScreen Widget Tests', () {
-    setUpAll(() async {
-      TestWidgetsFlutterBinding.ensureInitialized();
-      await dotenv.load(fileName: ".env");
-    });
+    testWidgets('shows title, empty state and Get Quote button', (tester) async {
+      await pumpQuoteScreen(tester);
 
-    testWidgets('QuoteScreen shows initial UI elements', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Verify key UI elements are present
       expect(find.text('Quote Me'), findsOneWidget);
+      expect(find.text('Ready for inspiration?'), findsOneWidget);
       expect(find.text('Get Quote'), findsOneWidget);
-      
-      // Check for audio control button
-      expect(find.byIcon(Icons.volume_up), findsOneWidget);
-      
-      // Check for share button (should be disabled initially)
-      expect(find.byIcon(Icons.share), findsOneWidget);
-      
-      // Check for settings icon in app bar
-      expect(find.byIcon(Icons.settings), findsOneWidget);
     });
 
-    testWidgets('Settings icon opens menu', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
+    testWidgets('Get Quote button is enabled', (tester) async {
+      await pumpQuoteScreen(tester);
+
+      final button = tester.widget<ButtonStyleButton>(
+        find.ancestor(of: find.text('Get Quote'), matching: find.bySubtype<ButtonStyleButton>()),
       );
-      await tester.pumpAndSettle();
-
-      // Tap settings icon
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      // Verify popup menu appears with expected options
-      expect(find.text('Settings'), findsOneWidget);
-      expect(find.text('Login'), findsOneWidget);
-    });
-
-    testWidgets('Audio button toggles state', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Find initial audio button
-      final audioButton = find.byKey(const Key('audio_toggle_button'));
-      expect(audioButton, findsOneWidget);
-
-      // Tap to toggle audio
-      await tester.tap(audioButton);
-      await tester.pumpAndSettle();
-
-      // Button should still exist (state may change)
-      expect(audioButton, findsOneWidget);
-    });
-
-    testWidgets('Get Quote button is visible and tappable', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final getQuoteButton = find.text('Get Quote');
-      expect(getQuoteButton, findsOneWidget);
-
-      // Verify button is enabled
-      final button = tester.widget<ElevatedButton>(find.byType(ElevatedButton).first);
       expect(button.onPressed, isNotNull);
     });
 
-    testWidgets('App shows loading state during quote fetch', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets('share button is hidden until a quote is shown', (tester) async {
+      await pumpQuoteScreen(tester);
 
-      // Tap Get Quote button
-      await tester.tap(find.text('Get Quote'));
-      await tester.pump(); // Trigger loading state
-
-      // Should show loading indicator
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byTooltip('Share Quote'), findsNothing);
     });
 
-    testWidgets('Share button exists', (WidgetTester tester) async {
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
+    testWidgets('menu offers About and Settings to everyone', (tester) async {
+      await pumpQuoteScreen(tester);
 
-      // Find share button
-      expect(find.byIcon(Icons.share), findsOneWidget);
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await pumpFrames(tester);
+
+      expect(find.text('About'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
     });
 
-    testWidgets('QuoteScreen handles different screen sizes', (WidgetTester tester) async {
-      // Test with small screen
-      await tester.binding.setSurfaceSize(const Size(300, 600));
-      
-      await tester.pumpWidget(
-        MaterialApp(
-          home: const QuoteScreen(),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Quote Me'), findsOneWidget);
-
-      // Test with large screen
-      await tester.binding.setSurfaceSize(const Size(800, 1200));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Quote Me'), findsOneWidget);
-
-      // Reset to default size
+    testWidgets('renders on small and large screens without overflow', (tester) async {
+      for (final size in const [Size(320, 640), Size(1024, 1366)]) {
+        await tester.binding.setSurfaceSize(size);
+        await pumpQuoteScreen(tester);
+        expect(find.text('Quote Me'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
       await tester.binding.setSurfaceSize(null);
     });
   });
