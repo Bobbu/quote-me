@@ -271,22 +271,40 @@ upload_to_s3() {
     
     echo "S3 Bucket: $BUCKET_NAME"
     
-    # Upload static assets with long cache
+    # Upload static assets, revalidated on every load. Flutter's filenames
+    # (main.dart.js, flutter_bootstrap.js, canvaskit/, assets/) are not
+    # content-hashed, so a long max-age leaves browsers running stale code
+    # after a deploy. Unchanged files cost only a 304 via their ETag.
+    # cp (not sync) so every object gets these headers, even if its size is unchanged.
     echo "Uploading static assets..."
-    aws s3 sync $FLUTTER_APP_DIR/build/web/ s3://$BUCKET_NAME/ \
-        --delete \
-        --cache-control "public, max-age=31536000" \
+    aws s3 cp $FLUTTER_APP_DIR/build/web/ s3://$BUCKET_NAME/ \
+        --recursive \
+        --only-show-errors \
+        --cache-control "public, max-age=0, must-revalidate" \
         --exclude "*.html" \
         --exclude "*.json" \
         --region $REGION
-    
+
     # Upload HTML and JSON files with no-cache for SPA routing
     echo "Uploading HTML and JSON files..."
-    aws s3 sync $FLUTTER_APP_DIR/build/web/ s3://$BUCKET_NAME/ \
+    aws s3 cp $FLUTTER_APP_DIR/build/web/ s3://$BUCKET_NAME/ \
+        --recursive \
+        --only-show-errors \
         --cache-control "no-cache, no-store, must-revalidate" \
         --exclude "*" \
         --include "*.html" \
         --include "*.json" \
+        --region $REGION
+
+    # Remove files no longer in the build (everything else is already uploaded)
+    echo "Removing stale files..."
+    aws s3 sync $FLUTTER_APP_DIR/build/web/ s3://$BUCKET_NAME/ \
+        --delete \
+        --size-only \
+        --only-show-errors \
+        --cache-control "public, max-age=0, must-revalidate" \
+        --exclude "*.html" \
+        --exclude "*.json" \
         --region $REGION
     
     print_success "Files uploaded to S3"
